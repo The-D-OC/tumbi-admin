@@ -1,0 +1,10 @@
+node_modules
+dist
+.DS_Store
+
+# NEVER commit the service key — it bypasses all database security.
+.env
+.env.local
+*.local
+.vercel
+.env*
