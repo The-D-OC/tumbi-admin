@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useForm, type Resolver } from 'react-hook-form';
+import { useForm, useWatch, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import { classSchema, EMPTY_FORM, CATEGORIES, CATEGORY_LABELS } from '../lib/schema';
@@ -60,7 +60,6 @@ export function ClassForm({
     control,
     setValue,
     getValues,
-    trigger,
     formState: { errors, isSubmitting },
   } = useForm<FormShape>({
     // The resolver validates the raw form against the zod schema and hands the
@@ -74,22 +73,44 @@ export function ClassForm({
   const [geoBusy, setGeoBusy] = useState(false);
   const [geoNote, setGeoNote] = useState<string | null>(null);
 
+  // Soft check only: warn (don't block) when the pin is outside the UK.
+  const [latRaw, lngRaw] = useWatch({ control, name: ['latitude', 'longitude'] });
+  const latNum = Number(latRaw);
+  const lngNum = Number(lngRaw);
+  const outsideUk =
+    latRaw !== '' && lngRaw !== '' && Number.isFinite(latNum) && Number.isFinite(lngNum) &&
+    (latNum < 49 || latNum > 61 || lngNum < -9 || lngNum > 2.2);
+
+  // Accepts "53.4808, -2.2426" (or space-separated) pasted into either box, as
+  // copied from Google Maps / Apple Maps, and splits it into both fields.
+  function splitPastedPair(text: string): boolean {
+    const m = text.trim().match(/^\(?\s*(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)\s*\)?$/);
+    if (!m) return false;
+    setValue('latitude', m[1], { shouldValidate: true, shouldDirty: true });
+    setValue('longitude', m[2], { shouldValidate: true, shouldDirty: true });
+    setGeoNote('📍 Coordinates entered manually.');
+    return true;
+  }
+
+  function onCoordPaste(e: React.ClipboardEvent<HTMLInputElement>) {
+    if (splitPastedPair(e.clipboardData.getData('text'))) e.preventDefault();
+  }
+
   async function findCoordinates() {
     setGeoNote(null);
-    // The lookup only really needs a valid postcode — some venues have no street
-    // name, so we don't block on the address here. A valid postcode alone places
-    // the pin; the address just sharpens it when present.
-    const ok = await trigger(['postcode']);
-    if (!ok) {
-      setGeoNote('Enter a valid postcode first — coordinates can be found from that alone.');
+    // Use whatever location details are filled in — postcode, street or town.
+    // Nothing here is required; if the lookup can't place it, type the
+    // coordinates in by hand instead.
+    const { address_line, city, postcode } = getValues();
+    if (![address_line, city, postcode].some((v) => v && v.trim())) {
+      setGeoNote('Enter a postcode, address or town first — or type the coordinates in manually.');
       return;
     }
     setGeoBusy(true);
     try {
-      const { address_line, city, postcode } = getValues();
       const hit = await geocodeAddress({ address_line, city, postcode });
       if (!hit) {
-        setGeoNote('Couldn’t find that location. Check the postcode, or type coordinates manually.');
+        setGeoNote('Couldn’t find that location. Check the details, or type/paste the coordinates manually.');
         return;
       }
       setValue('latitude', String(hit.lat.toFixed(6)), { shouldValidate: true });
@@ -102,7 +123,7 @@ export function ClassForm({
             : '📍 Found from town only (rough — check the pin)';
       setGeoNote(`${prefix}: ${hit.display}`);
     } catch {
-      setGeoNote('Lookup failed (network). You can type coordinates manually.');
+      setGeoNote('Lookup failed (network). You can type/paste the coordinates manually.');
     } finally {
       setGeoBusy(false);
     }
@@ -223,16 +244,24 @@ export function ClassForm({
 
       <div className="inline" style={{ marginTop: 8 }}>
         <Field label="Latitude" required error={errors.latitude?.message}>
-          <input type="text" inputMode="decimal" placeholder="53.4808" {...register('latitude')} />
+          <input type="text" inputMode="decimal" placeholder="53.4808" onPaste={onCoordPaste} {...register('latitude')} />
         </Field>
         <Field label="Longitude" required error={errors.longitude?.message}>
-          <input type="text" inputMode="decimal" placeholder="-2.2426" {...register('longitude')} />
+          <input type="text" inputMode="decimal" placeholder="-2.2426" onPaste={onCoordPaste} {...register('longitude')} />
         </Field>
         <button type="button" className="pill-btn" onClick={findCoordinates} disabled={geoBusy}>
           {geoBusy ? 'Finding…' : 'Find coordinates'}
         </button>
       </div>
+      <p className="subtle" style={{ marginTop: 6 }}>
+        Type or paste coordinates yourself (e.g. “53.4808, -2.2426” copied from Google Maps), or use Find coordinates.
+      </p>
       {geoNote && <p className="subtle" style={{ marginTop: 6 }}>{geoNote}</p>}
+      {outsideUk && (
+        <p className="subtle" style={{ marginTop: 6 }}>
+          ⚠️ These coordinates are outside the UK — double-check they're right (it will still save).
+        </p>
+      )}
 
       <div className="section-title">Contact & media</div>
       <div className="grid">
