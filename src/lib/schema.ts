@@ -124,17 +124,17 @@ export const classSchema = z
       .min(1, 'Enter the postcode')
       .refine((v) => UK_POSTCODE_RE.test(v), 'Enter a valid UK postcode (e.g. M1 1AE)'),
 
-    latitude: requiredNumber('Use “Find coordinates” to set this').pipe(
-      z
-        .number()
-        .min(49, 'Outside the UK — use “Find coordinates”')
-        .max(61, 'Outside the UK — use “Find coordinates”'),
+    // Coordinates can come from "Find coordinates" or be typed/pasted by hand
+    // (e.g. from Google Maps). Only basic sanity ranges are enforced here — the
+    // form shows a soft warning (not an error) if the pin lands outside the UK.
+    latitude: requiredNumber('Enter a latitude (e.g. 53.4808) or use “Find coordinates”').pipe(
+      z.number().min(-90, 'Latitude must be between -90 and 90').max(90, 'Latitude must be between -90 and 90'),
     ),
-    longitude: requiredNumber('Use “Find coordinates” to set this').pipe(
+    longitude: requiredNumber('Enter a longitude (e.g. -2.2426) or use “Find coordinates”').pipe(
       z
         .number()
-        .min(-9, 'Outside the UK — use “Find coordinates”')
-        .max(2.2, 'Outside the UK — use “Find coordinates”'),
+        .min(-180, 'Longitude must be between -180 and 180')
+        .max(180, 'Longitude must be between -180 and 180'),
     ),
 
     image_url: z
